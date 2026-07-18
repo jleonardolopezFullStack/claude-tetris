@@ -48,7 +48,11 @@ jobs:
                gh issue edit ${{ github.event.issue.number }} --add-label "label1,label2"
 
             4. Publica UN comentario en el issue (NO edites el cuerpo del issue) con un
-               diagnóstico general en español, usando markdown, con estas secciones:
+               diagnóstico general en español. El comentario DEBE estar escrito en
+               formato Markdown compatible con GitHub (GitHub Flavored Markdown), de
+               modo que GitHub lo renderice correctamente: usa encabezados (##),
+               listas, **negritas**, y bloques de código con triple backtick y el
+               lenguaje (por ejemplo ```js) cuando incluyas código. Usa estas secciones:
                - **Resumen**: qué pide o reporta el issue en 1-2 frases.
                - **Causa probable / archivos involucrados**: qué parte del código
                  (game.js, index.html, style.css y funciones concretas si aplica) está
