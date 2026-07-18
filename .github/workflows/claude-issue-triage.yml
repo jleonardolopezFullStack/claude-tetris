@@ -13,6 +13,7 @@ jobs:
       contents: read
       issues: write
       id-token: write
+      actions: write # Permite a claude-code-action escribir en el caché de Actions
 
     steps:
       - name: Checkout repository
