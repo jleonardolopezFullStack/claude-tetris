@@ -61,8 +61,72 @@ const overlayTitle = document.getElementById('overlay-title');
 const overlayScore = document.getElementById('overlay-score');
 const restartBtn = document.getElementById('restart-btn');
 const themeToggle = document.getElementById('theme-toggle');
+const skinSelect = document.getElementById('skin-select');
 
 const THEME_KEY = 'tetris-theme';
+const SKIN_KEY = 'tetris-skin';
+
+// Paletas por skin. `colors` reemplaza a COLORS cuando la skin está activa.
+const SKINS = {
+  retro: {
+    colors: COLORS,
+    glow: false,
+    radius: 0,
+    texture: false,
+    bg: null,
+  },
+  neon: {
+    colors: [
+      null,
+      '#00e5ff', '#fff176', '#e040fb', '#69f0ae', '#ff5252',
+      '#448aff', '#ffab40', '#ff4081', '#e0e0e0', '#1de9b6',
+      '#7c4dff', '#f50057', '#ffea00',
+    ],
+    glow: true,
+    radius: 0,
+    texture: false,
+    bg: '#000000',
+  },
+  pastel: {
+    colors: [
+      null,
+      '#a7d8de', '#fff2b2', '#d8b6e0', '#bfe3bf', '#f3b8b8',
+      '#c3ddf7', '#ffd8ae', '#f6c9db', '#d9dee2', '#a9dcd4',
+      '#c9bce8', '#f5b9cf', '#fff0a3',
+    ],
+    glow: false,
+    radius: 6,
+    texture: false,
+    bg: null,
+  },
+  pixel: {
+    colors: COLORS,
+    glow: false,
+    radius: 0,
+    texture: true,
+    bg: null,
+  },
+};
+
+let currentSkin = SKINS.retro;
+
+function applySkin(name) {
+  const skin = SKINS[name] ? name : 'retro';
+  currentSkin = SKINS[skin];
+  if (skinSelect) skinSelect.value = skin;
+  canvas.style.background = currentSkin.bg || '';
+  localStorage.setItem(SKIN_KEY, skin);
+}
+
+if (skinSelect) {
+  skinSelect.addEventListener('change', () => {
+    applySkin(skinSelect.value);
+    // Repinta de inmediato (aunque el juego esté pausado/game over) para que
+    // el cambio de skin se vea en el próximo frame sin recargar la página.
+    if (current) draw();
+    if (next) drawNext();
+  });
+}
 
 let board, current, next, score, lines, level, paused, gameOver, lastTime, dropAccum, dropInterval, animId, gridColor, rewardNext;
 let combo, b2b, lastMoveWasRotation, effects;
@@ -273,16 +337,102 @@ function updateHUD() {
   levelEl.textContent = level;
 }
 
+function drawRoundRectPath(context, x, y, w, h, r) {
+  const radius = Math.min(r, w / 2, h / 2);
+  if (typeof context.roundRect === 'function') {
+    context.beginPath();
+    context.roundRect(x, y, w, h, radius);
+    return;
+  }
+  // Fallback manual para navegadores sin ctx.roundRect.
+  context.beginPath();
+  context.moveTo(x + radius, y);
+  context.lineTo(x + w - radius, y);
+  context.arcTo(x + w, y, x + w, y + radius, radius);
+  context.lineTo(x + w, y + h - radius);
+  context.arcTo(x + w, y + h, x + w - radius, y + h, radius);
+  context.lineTo(x + radius, y + h);
+  context.arcTo(x, y + h, x, y + h - radius, radius);
+  context.lineTo(x, y + radius);
+  context.arcTo(x, y, x + radius, y, radius);
+  context.closePath();
+}
+
+function drawBlockTexture(context, px, py, size, baseAlpha) {
+  // Mini-cuadrícula 3x3 (pixel art / dithering) sobre el bloque.
+  // Se escala por baseAlpha para respetar la translucidez del llamador
+  // (ej. el ghost piece, dibujado con alpha reducido).
+  context.save();
+  context.globalAlpha = 0.18 * baseAlpha;
+  context.strokeStyle = '#000000';
+  context.lineWidth = 1;
+  const step = (size - 2) / 3;
+  for (let i = 1; i < 3; i++) {
+    context.beginPath();
+    context.moveTo(px + i * step, py);
+    context.lineTo(px + i * step, py + size - 2);
+    context.stroke();
+    context.beginPath();
+    context.moveTo(px, py + i * step);
+    context.lineTo(px + size - 2, py + i * step);
+    context.stroke();
+  }
+  context.globalAlpha = 0.1 * baseAlpha;
+  context.fillStyle = '#ffffff';
+  for (let r = 0; r < 3; r++) {
+    for (let c = 0; c < 3; c++) {
+      if ((r + c) % 2 === 0) {
+        context.fillRect(px + c * step, py + r * step, step, step);
+      }
+    }
+  }
+  context.restore();
+}
+
+// Rellena un rectángulo (recto o con esquinas redondeadas según `radius`).
+function fillBlockShape(context, px, py, w, h, radius) {
+  if (radius > 0) {
+    drawRoundRectPath(context, px, py, w, h, radius);
+    context.fill();
+  } else {
+    context.fillRect(px, py, w, h);
+  }
+}
+
 function drawBlock(context, x, y, colorIndex, size, alpha) {
   if (!colorIndex) return;
-  const color = COLORS[colorIndex];
+  const skin = currentSkin || SKINS.retro;
+  const palette = skin.colors || COLORS;
+  const color = palette[colorIndex] || COLORS[colorIndex];
+  const px = x * size + 1;
+  const py = y * size + 1;
+  const w = size - 2;
+  const h = size - 2;
+
+  context.save();
   context.globalAlpha = alpha ?? 1;
+
+  if (skin.glow) {
+    context.shadowColor = color;
+    context.shadowBlur = size * 0.6;
+  }
+
   context.fillStyle = color;
-  context.fillRect(x * size + 1, y * size + 1, size - 2, size - 2);
+  fillBlockShape(context, px, py, w, h, skin.radius);
+
+  // Segunda pasada para el glow: refuerza el relleno sin la sombra duplicándose
+  // en el highlight, y evita que shadowBlur afecte al highlight/textura.
+  context.shadowBlur = 0;
+
   // highlight
   context.fillStyle = 'rgba(255,255,255,0.12)';
-  context.fillRect(x * size + 1, y * size + 1, size - 2, 4);
-  context.globalAlpha = 1;
+  fillBlockShape(context, px, py, w, Math.min(4, h), skin.radius);
+
+  if (skin.texture) {
+    drawBlockTexture(context, px, py, size, alpha ?? 1);
+  }
+
+  context.restore();
 }
 
 function drawGrid() {
@@ -454,6 +604,7 @@ function loop(ts) {
 
 function init() {
   applyTheme(localStorage.getItem(THEME_KEY) || 'dark');
+  applySkin(localStorage.getItem(SKIN_KEY) || 'retro');
   board = createBoard();
   score = 0;
   lines = 0;
@@ -477,6 +628,11 @@ function init() {
 }
 
 document.addEventListener('keydown', e => {
+  // Ignorar controles del juego cuando el foco está en un control de UI
+  // (ej. el <select> de skin), para no interceptar su propia navegación
+  // por teclado (flechas/espacio).
+  const tag = e.target && e.target.tagName;
+  if (tag === 'SELECT' || tag === 'INPUT' || tag === 'BUTTON') return;
   ensureAudio();
   if (e.code === 'KeyP') { togglePause(); return; }
   if (paused || gameOver) return;
