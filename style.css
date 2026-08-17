@@ -180,6 +180,22 @@ body {
   transition: background 0.2s, border-color 0.2s;
 }
 
+/* ---- Selector de skin ---- */
+.skin-select {
+  background: var(--kbd-bg);
+  color: var(--fg);
+  border: 1px solid var(--kbd-border);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.skin-select:focus {
+  outline: 1px solid var(--value-color);
+}
+
 /* ---- Controles ---- */
 .controls ul {
   list-style: none;
