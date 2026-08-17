@@ -61,12 +61,28 @@ const overlayTitle = document.getElementById('overlay-title');
 const overlayScore = document.getElementById('overlay-score');
 const restartBtn = document.getElementById('restart-btn');
 const themeToggle = document.getElementById('theme-toggle');
+const pauseMenu = document.getElementById('pause-menu');
+const resumeBtn = document.getElementById('resume-btn');
+const pauseRestartBtn = document.getElementById('pause-restart-btn');
+const controlsToggleBtn = document.getElementById('controls-toggle-btn');
+const controlsPanel = document.getElementById('controls-panel');
+const levelDecBtn = document.getElementById('level-dec-btn');
+const levelIncBtn = document.getElementById('level-inc-btn');
+const levelValueEl = document.getElementById('level-value');
 
 const THEME_KEY = 'tetris-theme';
+const MIN_START_LEVEL = 1;
+const MAX_START_LEVEL = 15;
 
 let board, current, next, score, lines, level, paused, gameOver, lastTime, dropAccum, dropInterval, animId, gridColor, rewardNext;
 let combo, b2b, lastMoveWasRotation, effects;
 let audioCtx;
+// Nivel inicial elegido en el menú de pausa; se aplica a la PRÓXIMA partida (al Reiniciar).
+// No se resetea en init() a propósito: debe sobrevivir entre partidas.
+let selectedStartLevel = 1;
+// Nivel con el que arrancó la partida actual (copia de selectedStartLevel tomada en init()),
+// usado como base para el cálculo de nivel por líneas limpiadas.
+let runStartLevel = 1;
 
 function applyTheme(theme) {
   document.body.classList.toggle('light', theme === 'light');
@@ -215,7 +231,7 @@ function applyScoring(cleared, tSpin) {
 
   if (cleared > 0) {
     lines += cleared;
-    level = Math.floor(lines / 10) + 1;
+    level = runStartLevel + Math.floor(lines / 10);
     dropInterval = Math.max(100, 1000 - (level - 1) * 90);
     if (isTetris) rewardNext = true; // Tetris → recompensa: pieza single
   }
@@ -413,11 +429,21 @@ function playChain(labels) {
   if (special) beep(1976, notes * 0.06, 0.25, 0.09); // B6 destacado
 }
 
+// Restablece los botones/paneles del overlay al estado por defecto (sin menú de pausa
+// ni panel de controles abiertos). Usado tanto al terminar la partida como al reiniciar.
+function resetOverlayControls() {
+  restartBtn.classList.remove('hidden');
+  pauseMenu.classList.add('hidden');
+  controlsPanel.classList.add('hidden');
+  controlsToggleBtn.textContent = 'Ver controles';
+}
+
 function endGame() {
   gameOver = true;
   cancelAnimationFrame(animId);
   overlayTitle.textContent = 'GAME OVER';
   overlayScore.textContent = `Puntuación: ${score.toLocaleString()}`;
+  resetOverlayControls();
   overlay.classList.remove('hidden');
 }
 
@@ -425,12 +451,16 @@ function togglePause() {
   if (gameOver) return;
   paused = !paused;
   if (!paused) {
+    overlay.classList.add('hidden');
     lastTime = performance.now();
     loop(lastTime);
   } else {
     cancelAnimationFrame(animId);
     overlayTitle.textContent = 'PAUSA';
     overlayScore.textContent = '';
+    restartBtn.classList.add('hidden');
+    pauseMenu.classList.remove('hidden');
+    levelValueEl.textContent = selectedStartLevel;
     overlay.classList.remove('hidden');
   }
 }
@@ -457,10 +487,11 @@ function init() {
   board = createBoard();
   score = 0;
   lines = 0;
-  level = 1;
+  runStartLevel = selectedStartLevel;
+  level = runStartLevel;
   paused = false;
   gameOver = false;
-  dropInterval = 1000;
+  dropInterval = Math.max(100, 1000 - (level - 1) * 90);
   dropAccum = 0;
   rewardNext = false;
   combo = 0;
@@ -472,13 +503,15 @@ function init() {
   spawn();
   updateHUD();
   overlay.classList.add('hidden');
+  resetOverlayControls();
+  levelValueEl.textContent = selectedStartLevel;
   cancelAnimationFrame(animId);
   animId = requestAnimationFrame(loop);
 }
 
 document.addEventListener('keydown', e => {
   ensureAudio();
-  if (e.code === 'KeyP') { togglePause(); return; }
+  if (e.code === 'KeyP' || e.code === 'Escape') { togglePause(); return; }
   if (paused || gameOver) return;
   switch (e.code) {
     case 'ArrowLeft':
@@ -503,5 +536,27 @@ document.addEventListener('keydown', e => {
 });
 
 restartBtn.addEventListener('click', init);
+
+resumeBtn.addEventListener('click', () => {
+  if (paused) togglePause();
+});
+
+pauseRestartBtn.addEventListener('click', init);
+
+controlsToggleBtn.addEventListener('click', () => {
+  const willShow = controlsPanel.classList.contains('hidden');
+  controlsPanel.classList.toggle('hidden', !willShow);
+  controlsToggleBtn.textContent = willShow ? 'Ocultar controles' : 'Ver controles';
+});
+
+levelDecBtn.addEventListener('click', () => {
+  selectedStartLevel = Math.max(MIN_START_LEVEL, selectedStartLevel - 1);
+  levelValueEl.textContent = selectedStartLevel;
+});
+
+levelIncBtn.addEventListener('click', () => {
+  selectedStartLevel = Math.min(MAX_START_LEVEL, selectedStartLevel + 1);
+  levelValueEl.textContent = selectedStartLevel;
+});
 
 init();
